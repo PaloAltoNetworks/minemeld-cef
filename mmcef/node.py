@@ -64,7 +64,7 @@ class Output(BaseFT):
     def __init__(self, name, chassis, config):
         self.parent_template = os.path.join(
             os.path.dirname(__file__),
-            'templates/cef.yaml'
+            'templates/cef.yml'
         )
         self.locals = {
             'version': __version__
