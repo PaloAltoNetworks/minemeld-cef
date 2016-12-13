@@ -22,6 +22,13 @@ $join-if-list:
     ]
   ]
 
+$indicator-unicast:
+  $begin:
+    - {$define: [$indicator-prefixlen, {$ip-prefixlen: $$__indicator}]}
+    - $or:
+      - {$and: [{$eq: [$indicator-prefixlen, 32]}, { $eq: [ $$type, "IPv4" ]}]}
+      - {$and: [{$eq: [$indicator-prefixlen, 128]}, { $eq: [ $$type, "IPv6" ]}]}
+
 Severity: 0
 Name: "MineMeld IOC"
 deviceVendor: "Palo Alto Networks"
@@ -35,39 +42,39 @@ deviceCustomDate2Label: LastSeen
 deviceCustomDate2: $$last_seen
 
 endTime: { $time-millisecond-since-epoch: [] }
+deviceEventClassID: $$__method
 deviceFacility: $$type
-act: $$__method
 
 # indicators
 dst:
   $if: [
-    {$and: [{$is-unicast: $$__indicator}, { $eq: [ $$type, "IPv4" ]}]},
+    {$and: [$indicator-unicast, { $eq: [ $$type, "IPv4" ]}]},
     $$__indicator,
     null
   ]
 
 c6a1:
   $if: [
-    {$and: [{$is-unicast: $$__indicator}, { $eq: [ $$type, "IPv6" ]}]},
+    {$and: [$indicator-unicast, { $eq: [ $$type, "IPv6" ]}]},
     $$__indicator,
     null
   ]
 c6a1Label:
   $if: [
-    {$and: [{$is-unicast: $$__indicator}, { $eq: [ $$type, "IPv6" ]}]},
-    $$__indicator,
+    {$and: [$indicator-unicast, { $eq: [ $$type, "IPv6" ]}]},
+    "IPv6 indicator",
     null
   ]
 
 cs6:
   $if: [
-    {$lt: [{$ip-prefixlen: $$__indicator}, 32]},
+    {$and: [{$not: $indicator-unicast}, {$or: [{$eq: [$$type, "IPv4"]}, {$eq: [$$type, "IPv6"]}]}]},
     $$__indicator,
     null
   ]
 cs6Label:
   $if: [
-    {$lt: [{$ip-prefixlen: $$__indicator}, 32]},
+    {$and: [{$not: $indicator-unicast}, {$or: [{$eq: [$$type, "IPv4"]}, {$eq: [$$type, "IPv6"]}]}]},
     {$list-join: [" ", [$$type, "Network indicator"]]},
     null
   ]
@@ -79,7 +86,7 @@ dhost:
     null
   ]
 
-requestURL:
+request:
   $if: [
     { $eq: [ $$type, "URL" ]},
     $$__indicator,

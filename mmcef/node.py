@@ -70,9 +70,9 @@ class Output(BaseFT):
             'version': __version__
         }
 
-        super(Output, self).__init__(name, chassis, config)
-
         self.socket = None
+
+        super(Output, self).__init__(name, chassis, config)
 
     def configure(self):
         super(Output, self).configure()
@@ -80,6 +80,7 @@ class Output(BaseFT):
         self.verify_cert = self.config.get('verify_cert', True)
         self.host = self.config.get('host', None)
         self.port = self.config.get('port', 514)
+        self.external_id = self.config.get('external_id', 'MineMeld')
         self.template = self.config.get('template', None)
 
         level_ = self.config.get('level', 'SYSLOG')
@@ -92,7 +93,7 @@ class Output(BaseFT):
         if self.facility is None:
             raise ValueError('Unknown syslog facility {}'.format(facility_))
 
-        self.lf_encoded = self.level+self.facility*8
+        self.pri = self.level+self.facility*8
 
         self._compile_template()
 
@@ -129,6 +130,9 @@ class Output(BaseFT):
         pass
 
     def _cef_header_escape(self, s):
+        if not isinstance(s, str) and not isinstance(s, unicode):
+            return u'{}'.format(s)
+
         if '\\n' in s or '\\r' in s:
             raise ValueError('Newline in header field: {!r}'.format(s))
 
@@ -138,6 +142,9 @@ class Output(BaseFT):
         return s
 
     def _cef_extension_key_escape(self, s):
+        if not isinstance(s, str) and not isinstance(s, unicode):
+            raise ValueError('{}: extension keys should be strings'.format(self.name))
+
         if '\\n' in s or '\\r' in s:
             raise ValueError('Newline in extension key: {!r}'.format(s))
 
@@ -147,6 +154,9 @@ class Output(BaseFT):
         return s
 
     def _cef_extension_value_escape(self, s):
+        if not isinstance(s, str) and not isinstance(s, unicode):
+            return u'{}'.format(s)
+
         s = s.replace('\\', '\\\\')
         s = s.replace('=', '\\=')
         s = s.replace('\n', '\\n')
@@ -155,7 +165,8 @@ class Output(BaseFT):
         return s
 
     def _emit_cef(self, fields):
-        fields['deviceEventClassID'] = self.name
+        fields['deviceProcessName'] = self.name
+        fields['deviceExternalId'] = self.external_id
 
         cef_fields = ['CEF:0']  # CEF version 0
 
@@ -184,20 +195,20 @@ class Output(BaseFT):
 
         cef_message = '|'.join(cef_fields)
 
-        LOG.debug('{}: emit {}'.format(self.name, cef_message))
-
         timestamp = datetime.utcnow().replace(tzinfo=utc)
 
         # XXX check if the 3164 does not really include year and TZ
-        syslog_msg = '<{}>{} {}'.format(
-            self.lf_encoded,
+        syslog_msg = u'<{}>{} {}'.format(
+            self.pri,
             timestamp.strftime('%b %d %H:%M:%S'),
             cef_message
         )
 
+        LOG.debug(u'{}: emit {}'.format(self.name, syslog_msg))
+
         # XXX add support for TCP
         if self.socket is not None:
-            self.socket.sendto(syslog_msg, (self.host, self.port))
+            self.socket.sendto(syslog_msg.encode('utf8'), (self.host, self.port))
 
         self.statistics['message.sent'] += 1
 

@@ -1,30 +1,21 @@
-url: https://github.com/PaloAltoNetworks/youtube-miner
+url: https://github.com/PaloAltoNetworks/minemeld-cef
 description: >
-  Sample extension for MineMeld.
+  CEF Output extension for MineMeld.
 
 prototypes:
-  eevblog:
+  testCEF:
     author: Palo Alto Networks TBD
-    class: youtubeminer.Miner
+    class: cef.Output
     development_status: EXPERIMENTAL
-    node_type: miner
+    node_type: output
     indicator_types:
-      - URL
+      - any
     tags:
       - extension
-      - youtubeminer
+      - cef
     description: >
-      test prototype for youtubeminer.Miner, mines video of EEVblog
+      CEF Output node, create a new prototype based on this and specify
+      host and port
     config:
-      # set the channel name to EEVblog
-      channel_name: EEVblog
-      # source name used in the indicators
-      source_name: youtube.EEVblog
-      # age out of indicators
-      # disabled, removed when they disappear from the channel
-      age_out:
-        sudden_death: true
-        default: null
-      # flag indicators with share level green
-      attributes:
-        share_level: green
+      host: "127.0.0.1"
+      port: 9000
