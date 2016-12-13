@@ -1,0 +1,4 @@
+minemeld-core>=0.9.31b2
+PyYAML
+pytz
+gevent

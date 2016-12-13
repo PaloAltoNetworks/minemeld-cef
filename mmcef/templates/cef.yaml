@@ -1,0 +1,108 @@
+$interesting-fields: [
+  "phishme_threatType",
+  "phishme_label",
+  "phishme_threatDetailURL",
+  "recordedfuture_entityurl",
+  "proofpoint_etintelligence_max_score",
+  "proofpoint_etintelligence_categories",
+  "bambenekconsulting_description",
+  "bambenekconsulting_info"
+]
+
+$interesting-attributes:
+      {$list-intersection: [$interesting-fields, {$attributes-list: []}]}
+
+$join-if-list:
+  $lambda: [
+    $l,
+    $if: [
+      {"$list?": $l},
+      {$list-join: [",", $l]},
+      $l
+    ]
+  ]
+
+Severity: 0
+Name: "MineMeld IOC"
+deviceVendor: "Palo Alto Networks"
+deviceProduct: "MineMeld CEF Output"
+deviceVersion: $version
+
+deviceCustomDate1Label: FirstSeen
+deviceCustomDate1: $$first_seen
+
+deviceCustomDate2Label: LastSeen
+deviceCustomDate2: $$last_seen
+
+endTime: { $time-millisecond-since-epoch: [] }
+deviceFacility: $$type
+act: $$__method
+
+# indicators
+dst:
+  $if: [
+    {$and: [{$is-unicast: $$__indicator}, { $eq: [ $$type, "IPv4" ]}]},
+    $$__indicator,
+    null
+  ]
+
+c6a1:
+  $if: [
+    {$and: [{$is-unicast: $$__indicator}, { $eq: [ $$type, "IPv6" ]}]},
+    $$__indicator,
+    null
+  ]
+c6a1Label:
+  $if: [
+    {$and: [{$is-unicast: $$__indicator}, { $eq: [ $$type, "IPv6" ]}]},
+    $$__indicator,
+    null
+  ]
+
+cs6:
+  $if: [
+    {$lt: [{$ip-prefixlen: $$__indicator}, 32]},
+    $$__indicator,
+    null
+  ]
+cs6Label:
+  $if: [
+    {$lt: [{$ip-prefixlen: $$__indicator}, 32]},
+    {$list-join: [" ", [$$type, "Network indicator"]]},
+    null
+  ]
+
+dhost:
+  $if: [
+    { $eq: [ $$type, "domain" ]},
+    $$__indicator,
+    null
+  ]
+
+requestURL:
+  $if: [
+    { $eq: [ $$type, "URL" ]},
+    $$__indicator,
+    null
+  ]
+
+cn1: $$confidence
+cn1Label: "Confidence"
+
+cn2: {$list-length: $$sources}
+cn2Label: "NumberOfSources"
+
+cs1: $$share_level
+cs1Label: "ShareLevel"
+
+cs2: {$list-join: [",", $$sources]}
+cs2Label: Sources
+
+cs3: {$join-if-list: {$attributes-get: {$car: $interesting-attributes}}}
+cs3Label: {$car: $interesting-attributes}
+
+cs4: {$join-if-list: {$attributes-get: {$car: {$cdr: $interesting-attributes}}}}
+cs4Label: {$car: {$cdr: $interesting-attributes}}
+
+cs5: {$join-if-list: {$attributes-get: {$car: {$cdr: {$cdr: $interesting-attributes}}}}}
+cs5Label: {$car: {$cdr: {$cdr: $interesting-attributes}}}
