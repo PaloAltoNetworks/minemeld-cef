@@ -1,5 +1,6 @@
 import logging
 import os
+import hashlib
 from datetime import datetime
 from collections import defaultdict
 
@@ -133,11 +134,6 @@ class SyslogActor(Greenlet):
         self._socket = socket.socket(*self.address_info[:3])
         self._socket.connect(self.address_info[4])
 
-    def _run(self):
-        while True:
-            msg = self._queue.get()
-            self._ship(msg)
-
     def _ship(self, msg):
         while True:
             try:
@@ -156,6 +152,11 @@ class SyslogActor(Greenlet):
                 LOG.error('{}: error sending msg to syslog: {}'.format(self.name, str(e)))
                 self.statistics['error.sending'] += 1
                 sleep(seconds=60)
+
+    def _run(self):
+        while True:
+            msg = self._queue.get()
+            self._ship(msg)
 
     def kill(self):
         if self._socket is not None:
@@ -177,20 +178,19 @@ class Output(BaseFT):
 
         super(Output, self).__init__(name, chassis, config)
 
-        self._actor = SyslogActor(self.name)
+        self._actor = SyslogActor(self.name, maxsize=self.queue_maxsize)
         self._actor.set_address(self.host, self.port, self.protocol)
 
     def configure(self):
         super(Output, self).configure()
 
-        self.verify_cert = self.config.get('verify_cert', True)
+        self.queue_maxsize = int(self.config.get('queue_maxsize', 100000))
+        if self.queue_maxsize == 0:
+            self.queue_maxsize = None
 
         self.host = self.config.get('host', None)
         self.port = self.config.get('port', 514)
         self.protocol = self.config.get('protocol', 'TCP')
-
-        self.external_id = self.config.get('external_id', 'MineMeld')
-        self.template = self.config.get('template', None)
 
         level_ = self.config.get('level', 'SYSLOG')
         self.level = _SYSLOG_LEVELS.get(level_.upper(), None)
@@ -204,13 +204,62 @@ class Output(BaseFT):
 
         self.pri = self.level+self.facility*8
 
+        self.external_id = self.config.get('external_id', 'MineMeld')
+
+        self.template = self.config.get('template', None)
+        if self.template is None:
+            self.template = os.path.join(
+                os.environ['MM_CONFIG_DIR'],
+                '%s_template.yml' % self.name
+            )
+
         self._compile_template()
 
     def _compile_template(self):
+        # basically everyt time this node starts checks the template
+        # - if it does not exist, the template provided in the package
+        #   is copied over and the md5 is added at the top as watermark
+        # - if it exists, the watermark is checked. If intact and matches
+        #   the md5 of the template in the package all good. If the watermark
+        #   it's not intact or does not match the one in the package, the
+        #   template in the package is copied over.
+        # This way we can update templates using code updates, but only if
+        # this does not override local customizations
         with open(self.parent_template, 'r') as f:
+            parent_template = f.read()
+        parent_md5 = hashlib.md5(parent_template)
+
+        if self._old_template(parent_md5, self.template):
+            with open(self.template, 'w') as f:
+                f.write('# {}\n'.format(parent_md5.hexdigest()))
+                f.write(parent_template)
+
+        with open(self.template, 'r') as f:
             template = yaml.safe_load(f)
 
         self._compiled_template = Template.compile(template)
+
+    def _old_template(self, new_md5, path):
+        if not os.path.exists(path):
+            LOG.info('file does not exist')
+            return True
+
+        with open(path, 'r') as f:
+            shebang = f.readline().strip()
+
+            if len(shebang) < 34:
+                return False
+
+            if shebang[:2] != '# ':
+                return False
+
+            orig_template_md5 = shebang[2:]
+            template_md5 = hashlib.md5(f.read())
+
+        if orig_template_md5 != template_md5.hexdigest():
+            return False
+
+        return template_md5 != new_md5
 
     def connect(self, inputs, output):
         output = False
@@ -339,3 +388,22 @@ class Output(BaseFT):
 
         if self._actor is not None:
             self._actor.kill()
+
+    @staticmethod
+    def gc(name, config=None):
+        BaseFT.gc(name, config=config)
+
+        if config is None:
+            return
+
+        template = config.get('template', None)
+        if template is None:
+            template = os.path.join(
+                os.environ['MM_CONFIG_DIR'],
+                '{}_template.yml'.format(name)
+            )
+
+        try:
+            os.remove(template)
+        except:
+            pass
