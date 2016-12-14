@@ -1,9 +1,12 @@
 import logging
 import os
 from datetime import datetime
+from collections import defaultdict
 
 import yaml
-from gevent.socket import socket, AF_INET, SOCK_DGRAM
+from gevent import socket, sleep, Greenlet
+from gevent.socket import SOCK_DGRAM, SOCK_STREAM
+from gevent.queue import Queue, Full
 from pytz import utc
 
 from girolamo import Template
@@ -48,6 +51,11 @@ _SYSLOG_FACILITIES = {
     'DEBUG': 7
 }
 
+_PROTOCOLS = {
+    'TCP': SOCK_STREAM,
+    'UDP': SOCK_DGRAM
+}
+
 # list of attributes that should be provided by template
 # if not set filtered_update will fail
 _CEF_HEADER_FIELDS = [
@@ -60,6 +68,101 @@ _CEF_HEADER_FIELDS = [
 ]
 
 
+class SyslogActor(Greenlet):
+    def __init__(self, name, maxsize=10000):
+        super(SyslogActor, self).__init__()
+        self._queue = Queue(maxsize=maxsize)
+        self._socket = None
+        self.name = name
+        self.address_info = None
+        self.host = None
+        self.port = None
+        self.protocol = None
+        self.statistics = defaultdict(int)
+
+    def set_address(self, host, port, protocol):
+        self.host = host
+        self.port = port
+        self.protocol = protocol
+
+        self.address_info = None
+
+        if self._socket is not None:
+            self._socket.close()
+            self._socket = None
+
+    def put(self, msg):
+        try:
+            self._queue.put(msg, block=False, timeout=0)
+        except Full:
+            self.statistics['message.drop'] += 1
+
+    def _resolve_address(self):
+        if self.host is None or self.port is None or self.protocol is None:
+            LOG.error('{}: host, port or protocol not set'.format(self.name))
+            self.address_info = None
+            return False
+
+        protocol_ = _PROTOCOLS.get(self.protocol.upper(), None)
+        if protocol_ is None:
+            LOG.error('{}: unknown protocol {}'.format(self.name, self.protocol.upper()))
+            self.address_info = None
+            return False
+
+        try:
+            self.address_info = socket.getaddrinfo(self.host, self.port, 0, protocol_)[0]
+        except (IndexError, socket.error) as e:
+            LOG.error(
+                '{}: error resolving {}:{}: {}'.format(self.name, self.host, self.port, str(e))
+            )
+            self.address_info = None
+            return False
+
+        LOG.info('{}: syslog server resolved to {!r}'.format(self.name, self.address_info))
+
+        return True
+
+    def _build_socket(self):
+        if self._socket is not None:
+            self._socket.close()
+            self._socket = None
+
+        if not self._resolve_address():
+            raise RuntimeError('Error resolving syslog server address')
+
+        self._socket = socket.socket(*self.address_info[:3])
+        self._socket.connect(self.address_info[4])
+
+    def _run(self):
+        while True:
+            msg = self._queue.get()
+            self._ship(msg)
+
+    def _ship(self, msg):
+        while True:
+            try:
+                if self._socket is None:
+                    self._build_socket()
+
+                self._socket.send(msg)
+                self.statistics['message.sent'] += 1
+                return
+
+            except (RuntimeError, socket.error) as e:
+                if self._socket is not None:
+                    self._socket.close()
+                    self._socket = None
+
+                LOG.error('{}: error sending msg to syslog: {}'.format(self.name, str(e)))
+                self.statistics['error.sending'] += 1
+                sleep(seconds=60)
+
+    def kill(self):
+        if self._socket is not None:
+            self._socket.close()
+        super(SyslogActor, self).kill()
+
+
 class Output(BaseFT):
     def __init__(self, name, chassis, config):
         self.parent_template = os.path.join(
@@ -70,16 +173,22 @@ class Output(BaseFT):
             'version': __version__
         }
 
-        self.socket = None
+        self._actor = None
 
         super(Output, self).__init__(name, chassis, config)
+
+        self._actor = SyslogActor(self.name)
+        self._actor.set_address(self.host, self.port, self.protocol)
 
     def configure(self):
         super(Output, self).configure()
 
         self.verify_cert = self.config.get('verify_cert', True)
+
         self.host = self.config.get('host', None)
         self.port = self.config.get('port', 514)
+        self.protocol = self.config.get('protocol', 'TCP')
+
         self.external_id = self.config.get('external_id', 'MineMeld')
         self.template = self.config.get('template', None)
 
@@ -97,24 +206,11 @@ class Output(BaseFT):
 
         self._compile_template()
 
-        self._build_socket()
-
     def _compile_template(self):
         with open(self.parent_template, 'r') as f:
             template = yaml.safe_load(f)
 
         self._compiled_template = Template.compile(template)
-
-    def _build_socket(self):
-        if self.host is None or self.port is None:
-            LOG.error('{}: host or port not set'.format(self.name))
-            return
-
-        if self.socket is not None:
-            self.socket.close()
-
-        # XXX add support for TCP
-        self.socket = socket(AF_INET, SOCK_DGRAM)
 
     def connect(self, inputs, output):
         output = False
@@ -197,7 +293,6 @@ class Output(BaseFT):
 
         timestamp = datetime.utcnow().replace(tzinfo=utc)
 
-        # XXX check if the 3164 does not really include year and TZ
         syslog_msg = u'<{}>{} {}'.format(
             self.pri,
             timestamp.strftime('%b %d %H:%M:%S'),
@@ -206,11 +301,7 @@ class Output(BaseFT):
 
         LOG.debug(u'{}: emit {}'.format(self.name, syslog_msg))
 
-        # XXX add support for TCP
-        if self.socket is not None:
-            self.socket.sendto(syslog_msg.encode('utf8'), (self.host, self.port))
-
-        self.statistics['message.sent'] += 1
+        self._actor.put(syslog_msg)
 
     @_counting('update.processed')
     def filtered_update(self, source=None, indicator=None, value=None):
@@ -226,5 +317,25 @@ class Output(BaseFT):
         output = self._compiled_template.eval(locals_=self.locals, data=value)
         self._emit_cef(output)
 
+    def mgmtbus_status(self):
+        result = super(Output, self).mgmtbus_status()
+
+        if self._actor is not None:
+            result['statistics'].update(self._actor.statistics)
+
+        return result
+
     def length(self, source=None):
         return 0
+
+    def start(self):
+        super(Output, self).start()
+
+        if self._actor is not None:
+            self._actor.start()
+
+    def stop(self):
+        super(Output, self).stop()
+
+        if self._actor is not None:
+            self._actor.kill()
