@@ -15,7 +15,8 @@ prototypes:
       - cef
     description: >
       CEF Output node, create a new prototype based on this and specify
-      host and port
+      host, port and protocol
     config:
       host: "127.0.0.1"
       port: 9000
+      protocol: udp
