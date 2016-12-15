@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import yaml
 from gevent import socket, sleep, Greenlet
-from gevent.socket import SOCK_DGRAM, SOCK_STREAM
+from gevent.socket import SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP
 from gevent.queue import Queue, Full
 from pytz import utc
 
@@ -140,7 +140,9 @@ class SyslogActor(Greenlet):
                 if self._socket is None:
                     self._build_socket()
 
-                self._socket.send(msg)
+                self._socket.send(
+                    msg+('\n' if self.address_info[2] == IPPROTO_TCP else '')  # we add "framing" if on TCP
+                )
                 self.statistics['message.sent'] += 1
                 return
 
@@ -361,10 +363,7 @@ class Output(BaseFT):
 
     @_counting('withdraw.processed')
     def filtered_withdraw(self, source=None, indicator=None, value=None):
-        value['__indicator'] = indicator
-        value['__method'] = 'withdraw'
-        output = self._compiled_template.eval(locals_=self.locals, data=value)
-        self._emit_cef(output)
+        pass
 
     def mgmtbus_status(self):
         result = super(Output, self).mgmtbus_status()
