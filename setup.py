@@ -26,7 +26,7 @@ setup(
     provides=find_packages(),
     install_requires=_requirements,
     package_data = {
-        '': ['prototypes/*.yml']
+        '': ['prototypes/*.yml', 'templates/*.yml']
     },
     entry_points={
         'minemeld_nodes': [
