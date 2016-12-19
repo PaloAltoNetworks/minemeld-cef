@@ -5,6 +5,7 @@ from datetime import datetime
 from collections import defaultdict
 
 import yaml
+import netaddr
 from gevent import socket, sleep, Greenlet
 from gevent.socket import SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP
 from gevent.queue import Queue, Full
@@ -159,6 +160,9 @@ class SyslogActor(Greenlet):
         while True:
             msg = self._queue.get()
             self._ship(msg)
+
+            if self.statistics['message.sent'] % 8192 == 1:
+                gevent.sleep(0)
 
     def kill(self):
         if self._socket is not None:
@@ -356,10 +360,21 @@ class Output(BaseFT):
 
     @_counting('update.processed')
     def filtered_update(self, source=None, indicator=None, value=None):
-        value['__indicator'] = indicator
         value['__method'] = 'update'
-        output = self._compiled_template.eval(locals_=self.locals, data=value)
-        self._emit_cef(output)
+
+        indicators = [indicator]
+        if value['type'] == 'IPv4' or value['type'] == 'IPv6' and '-' in indicator:
+            a1, a2 = indicator.split('-', 1)
+            if a1 == a2:
+                indicators = [a1]
+            else:
+                indicators = map(str, netaddr.IPRange(a1, a2).cidrs())
+
+        LOG.info('{} - indicators: {!r}'.format(self.name, indicators))
+        for i in indicators:
+            value['__indicator'] = i
+            output = self._compiled_template.eval(locals_=self.locals, data=value)
+            self._emit_cef(output)
 
     @_counting('withdraw.processed')
     def filtered_withdraw(self, source=None, indicator=None, value=None):
