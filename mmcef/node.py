@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import yaml
 import netaddr
-from gevent import socket, sleep, Greenlet
+from gevent import socket, sleep, Greenlet, GreenletExit
 from gevent.socket import SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP
 from gevent.queue import Queue, Full
 from pytz import utc
@@ -159,7 +159,16 @@ class SyslogActor(Greenlet):
     def _run(self):
         while True:
             msg = self._queue.get()
-            self._ship(msg)
+
+            try:
+                self._ship(msg)
+
+            except gevent.GreenletExit:
+                break
+
+            except:
+                LOG.exception('Exception in CEF output actor')
+                sleep(60)
 
             if self.statistics['message.sent'] % 8192 == 1:
                 sleep(0.001)
@@ -361,7 +370,7 @@ class Output(BaseFT):
         value['__method'] = 'update'
 
         indicators = [indicator]
-        if value['type'] == 'IPv4' or value['type'] == 'IPv6' and '-' in indicator:
+        if (value['type'] == 'IPv4' or value['type'] == 'IPv6') and '-' in indicator:
             a1, a2 = indicator.split('-', 1)
             if a1 == a2:
                 indicators = [a1]
