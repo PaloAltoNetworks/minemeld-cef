@@ -162,7 +162,7 @@ class SyslogActor(Greenlet):
             self._ship(msg)
 
             if self.statistics['message.sent'] % 8192 == 1:
-                gevent.sleep(0)
+                sleep(0.001)
 
     def kill(self):
         if self._socket is not None:
@@ -354,8 +354,6 @@ class Output(BaseFT):
             cef_message
         )
 
-        LOG.debug(u'{}: emit {}'.format(self.name, syslog_msg))
-
         self._actor.put(syslog_msg)
 
     @_counting('update.processed')
@@ -370,7 +368,6 @@ class Output(BaseFT):
             else:
                 indicators = map(str, netaddr.IPRange(a1, a2).cidrs())
 
-        LOG.info('{} - indicators: {!r}'.format(self.name, indicators))
         for i in indicators:
             value['__indicator'] = i
             output = self._compiled_template.eval(locals_=self.locals, data=value)
