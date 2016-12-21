@@ -163,7 +163,7 @@ class SyslogActor(Greenlet):
             try:
                 self._ship(msg)
 
-            except gevent.GreenletExit:
+            except GreenletExit:
                 break
 
             except:
