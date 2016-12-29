@@ -12,7 +12,8 @@ from gevent.queue import Queue, Full
 from pytz import utc
 
 from girolamo import Template
-from minemeld.ft.base import BaseFT, _counting
+from minemeld.ft.base import _counting
+from minemeld.ft.actorbase import ActorBaseFT
 
 from . import __version__
 
@@ -173,13 +174,16 @@ class SyslogActor(Greenlet):
             if self.statistics['message.sent'] % 8192 == 1:
                 sleep(0.001)
 
+    def length(self):
+        return self._queue.qsize()
+
     def kill(self):
         if self._socket is not None:
             self._socket.close()
         super(SyslogActor, self).kill()
 
 
-class Output(BaseFT):
+class Output(ActorBaseFT):
     def __init__(self, name, chassis, config):
         self.parent_template = os.path.join(
             os.path.dirname(__file__),
@@ -395,7 +399,7 @@ class Output(BaseFT):
         return result
 
     def length(self, source=None):
-        return 0
+        return self._actor.length()
 
     def start(self):
         super(Output, self).start()
@@ -411,7 +415,7 @@ class Output(BaseFT):
 
     @staticmethod
     def gc(name, config=None):
-        BaseFT.gc(name, config=config)
+        ActorBaseFT.gc(name, config=config)
 
         if config is None:
             return
