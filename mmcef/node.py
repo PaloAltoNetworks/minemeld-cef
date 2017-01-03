@@ -145,7 +145,7 @@ class SyslogActor(Greenlet):
                 self._socket.send(
                     msg+('\n' if self.address_info[2] == IPPROTO_TCP else '')  # we add "framing" if on TCP
                 )
-                self.statistics['message.sent'] += 1
+                self.statistics['cef-message.tx'] += 1
                 return
 
             except (RuntimeError, socket.error) as e:
@@ -160,9 +160,11 @@ class SyslogActor(Greenlet):
     def _run(self):
         while True:
             msg = self._queue.get()
+            LOG.info('{}: from queue {}'.format(self.name, msg))
 
             try:
                 self._ship(msg)
+                LOG.info('returned')
 
             except GreenletExit:
                 break
@@ -171,7 +173,7 @@ class SyslogActor(Greenlet):
                 LOG.exception('Exception in CEF output actor')
                 sleep(60)
 
-            if self.statistics['message.sent'] % 8192 == 1:
+            if self.statistics['cef-message.tx'] % 8192 == 1:
                 sleep(0.001)
 
     def length(self):
@@ -369,10 +371,7 @@ class Output(ActorBaseFT):
 
         self._actor.put(syslog_msg)
 
-    @_counting('update.processed')
-    def filtered_update(self, source=None, indicator=None, value=None):
-        value['__method'] = 'update'
-
+    def _eval_and_emit(self, indicator, value):
         indicators = [indicator]
         if (value['type'] == 'IPv4' or value['type'] == 'IPv6') and '-' in indicator:
             a1, a2 = indicator.split('-', 1)
@@ -384,11 +383,17 @@ class Output(ActorBaseFT):
         for i in indicators:
             value['__indicator'] = i
             output = self._compiled_template.eval(locals_=self.locals, data=value)
-            self._emit_cef(output)
+            self._emit_cef(output)        
+
+    @_counting('update.processed')
+    def filtered_update(self, source=None, indicator=None, value=None):
+        value['__method'] = 'update'
+        self._eval_and_emit(indicator, value)
 
     @_counting('withdraw.processed')
     def filtered_withdraw(self, source=None, indicator=None, value=None):
-        pass
+        value['__method'] = 'withdraw'
+        self._eval_and_emit(indicator, value)
 
     def mgmtbus_status(self):
         result = super(Output, self).mgmtbus_status()
