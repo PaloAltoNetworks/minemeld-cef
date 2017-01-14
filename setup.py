@@ -1,4 +1,8 @@
 from setuptools import Extension, setup, find_packages
+try:
+    from Cython.Build import cythonize
+except ImportError:
+    cythonize = lambda x: x
 
 import sys
 import os.path
@@ -15,6 +19,11 @@ _entry_points={}
 if 'entry_points' in _metadata:
     for epgroup, epoints in _metadata['entry_points'].iteritems():
         _entry_points[epgroup] = ['{} = {}'.format(k, v) for k, v in epoints.iteritems()]
+
+GIROLAMO = Extension(
+    name='mmcef.packages.girolamo._vm',
+    sources=['mmcef/packages/girolamo/_vm.pyx']
+)
 
 setup(
     name=_metadata['name'],
@@ -33,6 +42,8 @@ setup(
     packages=find_packages(),
     provides=find_packages(),
     install_requires=_requirements,
+    setup_requires=['cython'],
+    ext_modules=cythonize([GIROLAMO]),
     package_data = {
         '': ['prototypes/*.yml', 'templates/*.yml']
     },

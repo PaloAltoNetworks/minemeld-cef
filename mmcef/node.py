@@ -11,7 +11,7 @@ from gevent.socket import SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP
 from gevent.queue import Queue, Full
 from pytz import utc
 
-from girolamo import Template
+from mmcef.packages.girolamo import Template
 from minemeld.ft.base import _counting
 from minemeld.ft.actorbase import ActorBaseFT
 
