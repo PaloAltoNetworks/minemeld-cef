@@ -1,6 +1,6 @@
 {
     "name": "minemeld-cef",
-    "version": "0.1b5",
+    "version": "0.1b7",
     "author": "Palo Alto Networks",
     "author_email": "techbizdev@paloaltonetworks.com",
     "description": "MineMeld output node for CEF",
