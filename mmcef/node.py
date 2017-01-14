@@ -15,7 +15,7 @@ from girolamo import Template
 from minemeld.ft.base import _counting
 from minemeld.ft.actorbase import ActorBaseFT
 
-from . import __version__
+VERSION = "0.1"
 
 LOG = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ class Output(ActorBaseFT):
             'templates/cef.yml'
         )
         self.locals = {
-            'version': __version__
+            'version': VERSION
         }
 
         self._actor = None
