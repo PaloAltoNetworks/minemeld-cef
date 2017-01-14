@@ -1,0 +1,16 @@
+{
+    "name": "minemeld-cef",
+    "version": "0.1b5",
+    "author": "Palo Alto Networks",
+    "author_email": "techbizdev@paloaltonetworks.com",
+    "description": "MineMeld output node for CEF",
+    "entry_points": {
+        "minemeld_nodes": {
+            "cef.Output": "mmcef.node:Output"
+        },
+        "minemeld_prototypes": {
+            "cef.prototypes": "mmcef:prototypes"
+        }
+    },
+    "manifest_version": 0
+}
