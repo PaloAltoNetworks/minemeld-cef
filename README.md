@@ -1,2 +1,2 @@
 # minemeld-cef
-MineMeld output node for CEF
+CEF output node for MineMeld
